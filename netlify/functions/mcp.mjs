@@ -1,46 +1,38 @@
-// Paradoks MCP — http_request + github_api + telegram_call
-// Netlify env: MCP_KEY (majburiy), GITHUB_TOKEN (ixtiyoriy), TG_TOKEN (ixtiyoriy)
+// Paradoks MCP (ommaviy versiya) — telegram_call + github_api
+// Serverda hech qanday maxfiy kalit YO'Q: har kim o'z tokenini chatda beradi.
+// Token hech qayerda saqlanmaydi va log qilinmaydi.
 const MAX = 60000;
+const TG_TOKEN_RE = /^\d{5,15}:[A-Za-z0-9_-]{30,60}$/;
+const TG_METHOD_RE = /^[A-Za-z]{1,40}$/;
 
 const TOOLS = [
   {
-    name: "http_request",
-    description: "Istalgan URLga HTTP so'rov yuboradi (GET/POST/...). Javob: status, headers, body (qisqartirilgan).",
+    name: "telegram_call",
+    description:
+      "Telegram Bot API'ning istalgan metodi (sendMessage, sendPhoto, getUpdates, banChatMember, ...). Foydalanuvchi bot tokenini chatda beradi.",
     inputSchema: {
       type: "object",
       properties: {
-        url: { type: "string" },
-        method: { type: "string", default: "GET" },
-        headers: { type: "object", additionalProperties: { type: "string" } },
-        body: { type: "string", description: "Matn yoki JSON string" },
+        token: { type: "string", description: "Bot token (BotFather'dan)" },
+        method: { type: "string", description: "Masalan: sendMessage" },
+        params: { type: "object", description: "Metod parametrlari" },
       },
-      required: ["url"],
+      required: ["token", "method"],
     },
   },
   {
     name: "github_api",
-    description: "GitHub REST API. path masalan: /user/repos yoki /repos/OWNER/REPO/contents/FILE. Token serverdagi GITHUB_TOKEN dan olinadi.",
+    description:
+      "GitHub REST API. Foydalanuvchi o'z GitHub tokenini beradi. path masalan: /user/repos yoki /repos/OWNER/REPO/contents/FILE",
     inputSchema: {
       type: "object",
       properties: {
+        token: { type: "string" },
         method: { type: "string", default: "GET" },
         path: { type: "string" },
         body: { type: "object" },
       },
-      required: ["path"],
-    },
-  },
-  {
-    name: "telegram_call",
-    description: "Telegram Bot API istalgan metodi (sendMessage, getUpdates, ...). token berilmasa serverdagi TG_TOKEN ishlatiladi.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        method: { type: "string" },
-        params: { type: "object" },
-        token: { type: "string" },
-      },
-      required: ["method"],
+      required: ["token", "path"],
     },
   },
 ];
@@ -52,31 +44,30 @@ async function doFetch(url, init) {
   const t = setTimeout(() => ctl.abort(), 9000);
   try {
     const r = await fetch(url, { ...init, signal: ctl.signal });
-    const text = await r.text();
-    const headers = {};
-    for (const k of ["content-type", "location", "x-ratelimit-remaining"]) {
-      if (r.headers.get(k)) headers[k] = r.headers.get(k);
-    }
-    return JSON.stringify({ status: r.status, headers, body: clip(text) }, null, 2);
+    return JSON.stringify({ status: r.status, body: clip(await r.text()) }, null, 2);
   } finally {
     clearTimeout(t);
   }
 }
 
 async function callTool(name, a = {}) {
-  if (name === "http_request") {
-    const method = (a.method || "GET").toUpperCase();
-    const hasBody = a.body != null && !["GET", "HEAD"].includes(method);
-    return doFetch(a.url, { method, headers: a.headers || {}, body: hasBody ? String(a.body) : undefined });
+  if (name === "telegram_call") {
+    if (!TG_TOKEN_RE.test(a.token || "")) throw new Error("Bot token formati noto'g'ri");
+    if (!TG_METHOD_RE.test(a.method || "")) throw new Error("Metod nomi noto'g'ri");
+    return doFetch(`https://api.telegram.org/bot${a.token}/${a.method}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(a.params || {}),
+    });
   }
   if (name === "github_api") {
-    const tk = process.env.GITHUB_TOKEN;
-    if (!tk) throw new Error("GITHUB_TOKEN sozlanmagan");
+    if (!a.token) throw new Error("GitHub token kerak");
+    if (!String(a.path || "").startsWith("/")) throw new Error("path '/' bilan boshlansin");
     const method = (a.method || "GET").toUpperCase();
     return doFetch("https://api.github.com" + a.path, {
       method,
       headers: {
-        Authorization: `Bearer ${tk}`,
+        Authorization: `Bearer ${a.token}`,
         Accept: "application/vnd.github+json",
         "User-Agent": "paradoks-mcp",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -85,47 +76,46 @@ async function callTool(name, a = {}) {
       body: a.body && method !== "GET" ? JSON.stringify(a.body) : undefined,
     });
   }
-  if (name === "telegram_call") {
-    const tk = a.token || process.env.TG_TOKEN;
-    if (!tk) throw new Error("Bot token kerak");
-    return doFetch(`https://api.telegram.org/bot${tk}/${a.method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(a.params || {}),
-    });
-  }
   throw new Error("Noma'lum tool: " + name);
+}
+
+// oddiy IP bo'yicha limit (instance xotirasida): daqiqasiga 60
+const hits = new Map();
+function limited(ip) {
+  const now = Date.now();
+  const arr = (hits.get(ip) || []).filter((t) => now - t < 60000);
+  arr.push(now);
+  hits.set(ip, arr);
+  if (hits.size > 5000) hits.clear();
+  return arr.length > 60;
 }
 
 async function handle(m) {
   const { id, method, params } = m;
-  if (id === undefined) return null; // notification
+  if (id === undefined) return null;
   const ok = (result) => ({ jsonrpc: "2.0", id, result });
-  const err = (code, message) => ({ jsonrpc: "2.0", id, error: { code, message } });
   if (method === "initialize")
     return ok({
       protocolVersion: params?.protocolVersion || "2025-03-26",
       capabilities: { tools: {} },
-      serverInfo: { name: "paradoks-mcp", version: "1.0.0" },
+      serverInfo: { name: "paradoks-mcp", version: "2.0.0" },
     });
   if (method === "ping") return ok({});
   if (method === "tools/list") return ok({ tools: TOOLS });
   if (method === "tools/call") {
     try {
-      const text = await callTool(params.name, params.arguments);
-      return ok({ content: [{ type: "text", text }] });
+      return ok({ content: [{ type: "text", text: await callTool(params.name, params.arguments) }] });
     } catch (e) {
       return ok({ content: [{ type: "text", text: "Xato: " + e.message }], isError: true });
     }
   }
-  return err(-32601, "Method not found");
+  return { jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } };
 }
 
 export default async (req) => {
-  const key = process.env.MCP_KEY;
-  if (!key || new URL(req.url).searchParams.get("key") !== key)
-    return new Response("Unauthorized", { status: 401 });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
+  const ip = req.headers.get("x-nf-client-connection-ip") || "unknown";
+  if (limited(ip)) return new Response("Too Many Requests", { status: 429 });
   let msg;
   try { msg = await req.json(); } catch { return new Response("Bad JSON", { status: 400 }); }
   const out = Array.isArray(msg) ? (await Promise.all(msg.map(handle))).filter(Boolean) : await handle(msg);
