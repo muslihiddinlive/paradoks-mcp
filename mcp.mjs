@@ -843,9 +843,6 @@ footer a{color:var(--accent)}
     </ul>
   </section>
 
-  <footer>
-    Ochiq kod: <a href="https://github.com/YOUR-USERNAME/telegram-mcp">github.com/YOUR-USERNAME/telegram-mcp</a>
-  </footer>
 </main>
 <script>
 document.getElementById('url').textContent = location.origin + '/mcp';
