@@ -1,4 +1,4 @@
-// Paradoks MCP: Telegram + GitHub + Cloudflare + Netlify + Render (Streamable HTTP, stateless).
+// Paradoks MCP: Telegram + GitHub + Cloudflare + Netlify + Render + YouTube + Google Drive + Google Sheets (Streamable HTTP, stateless).
 // Tokenlar har tool chaqiruvida beriladi va HECH QACHON saqlanmaydi yoki log qilinmaydi.
 
 const TOKEN_RE = /^\d{6,12}:[A-Za-z0-9_-]{30,}$/;
@@ -110,6 +110,16 @@ const cfAcc = s("Cloudflare account ID (cf_list_accounts bilan toping)");
 const cfName = s("Worker nomi");
 const siteId = s("Netlify site ID (nl_list_sites bilan toping)");
 const rdSvc = s("Render service ID (srv-...)");
+const YT = "https://www.googleapis.com/youtube/v3";
+const DRV = "https://www.googleapis.com/drive/v3";
+const DRV_UP = "https://www.googleapis.com/upload/drive/v3";
+const SH = "https://sheets.googleapis.com/v4";
+const ggT = "Google OAuth access token (kerakli scope: youtube, youtube.force-ssl, drive, spreadsheets)";
+const ytVideoId = s("Video ID (masalan dQw4w9WgXcQ)");
+const ytPlaylistId = s("Playlist ID");
+const fileId = s("Google Drive fayl ID");
+const spreadsheetId = s("Spreadsheet ID (URL dagi /d/ID/ qismi)");
+const a1Range = s("A1 range, masalan Sheet1!A1:C10");
 
 const P_TOOLS = [
   // Cloudflare
@@ -166,6 +176,49 @@ const P_TOOLS = [
   ptool("rd_logs", rdT, "Servis log'lari", { owner_id: s("Owner ID"), service_id: rdSvc, limit: n("1-100") }, ["owner_id", "service_id"]),
   ptool("rd_delete_service", rdT, "Servisni o'chirish (XAVFLI, tasdiq kerak)", { service_id: rdSvc, confirm: confirmP }, ["service_id"]),
   ptool("rd_api", rdT, "Istalgan Render API so'rovi. Yo'l /v1 dan keyin: /services/ID/...", { method: methodP, path: s("Masalan /services"), body: anyBody, confirm: confirmP }, ["method", "path"]),
+
+  // YouTube
+  ptool("yt_search", ggT, "Video/kanal/playlist qidirish", {
+    query: s("Qidiruv so'zi"), type: s("video, channel yoki playlist (default video)"),
+    channel_id: s("Faqat shu kanaldan qidirish (ixtiyoriy)"),
+    order: s("date, rating, relevance, title, viewCount (default relevance)"),
+    max_results: n("1-50, default 10"),
+  }, ["query"]),
+  ptool("yt_get_video", ggT, "Video(lar) haqida to'liq ma'lumot (statistika, tavsif)", { video_ids: s("Video ID(lar), vergul bilan") }, ["video_ids"]),
+  ptool("yt_get_channel", ggT, "Kanal haqida ma'lumot", { channel_id: s("Kanal ID (mine:true bo'lmasa shart)"), mine: { type: "boolean", description: "O'zingizning kanalingiz" } }),
+  ptool("yt_list_playlist_items", ggT, "Playlist'dagi videolar ro'yxati", { playlist_id: ytPlaylistId, max_results: n("1-50, default 25") }, ["playlist_id"]),
+  ptool("yt_list_comments", ggT, "Video sharhlari (top-level)", { video_id: ytVideoId, max_results: n("1-100, default 20") }, ["video_id"]),
+  ptool("yt_add_comment", ggT, "Videoga sharh qoldirish (o'zingiz nomidan)", { video_id: ytVideoId, text: s("Sharh matni") }, ["video_id", "text"]),
+  ptool("yt_reply_comment", ggT, "Sharhga javob yozish", { parent_id: s("Javob beriladigan comment ID"), text: s("Javob matni") }, ["parent_id", "text"]),
+  ptool("yt_delete_comment", ggT, "Sharhni o'chirish (XAVFLI, tasdiq kerak)", { comment_id: s("Comment ID"), confirm: confirmP }, ["comment_id"]),
+  ptool("yt_update_video", ggT, "O'z videongizning sarlavha/tavsif/teglarini yangilash", {
+    video_id: ytVideoId, title: s("Yangi sarlavha (ixtiyoriy)"), description: s("Yangi tavsif (ixtiyoriy)"),
+    tags: { type: "array", items: { type: "string" }, description: "Teglar (ixtiyoriy)" },
+    category_id: s("Kategoriya ID (ixtiyoriy)"),
+  }, ["video_id"]),
+  ptool("yt_create_playlist", ggT, "Yangi playlist yaratish", { title: s("Nomi"), description: s("Tavsif (ixtiyoriy)"), privacy: s("public, unlisted, private (default private)") }, ["title"]),
+  ptool("yt_add_to_playlist", ggT, "Playlist'ga video qo'shish", { playlist_id: ytPlaylistId, video_id: ytVideoId, position: n("O'rin (ixtiyoriy)") }, ["playlist_id", "video_id"]),
+  ptool("yt_subscriptions", ggT, "O'zingiz obuna bo'lgan kanallar ro'yxati", { max_results: n("1-50, default 25") }),
+  ptool("yt_api", ggT, "Istalgan YouTube Data API v3 so'rovi. Yo'l /youtube/v3 dan keyin", { method: methodP, path: s("Masalan /videos?part=snippet&id=..."), body: anyBody, confirm: confirmP }, ["method", "path"]),
+
+  // Google Drive
+  ptool("drv_list_files", ggT, "Fayllar ro'yxati/qidirish", { query: s("Drive query, masalan name contains 'hisobot' (ixtiyoriy)"), max_results: n("1-100, default 20") }),
+  ptool("drv_get_file", ggT, "Fayl haqida ma'lumot (nomi, turi, havola)", { file_id: fileId }, ["file_id"]),
+  ptool("drv_read_text", ggT, "Matnli fayl mazmunini o'qish (Google Docs avtomatik eksport qilinadi)", { file_id: fileId }, ["file_id"]),
+  ptool("drv_create_text_file", ggT, "Yangi matnli fayl yaratish", { name: s("Fayl nomi"), content: s("Matn (UTF-8)"), folder_id: s("Papka ID (ixtiyoriy)"), mime_type: s("Default text/plain") }, ["name", "content"]),
+  ptool("drv_update_text_file", ggT, "Mavjud matnli faylni yangilash", { file_id: fileId, content: s("Yangi matn") }, ["file_id", "content"]),
+  ptool("drv_create_folder", ggT, "Yangi papka yaratish", { name: s("Papka nomi"), parent_id: s("Ota-papka ID (ixtiyoriy)") }, ["name"]),
+  ptool("drv_delete_file", ggT, "Faylni o'chirish (XAVFLI, tasdiq kerak)", { file_id: fileId, confirm: confirmP }, ["file_id"]),
+  ptool("drv_api", ggT, "Istalgan Drive API v3 so'rovi. Yo'l /drive/v3 dan keyin", { method: methodP, path: s("Masalan /files?q=..."), body: anyBody, confirm: confirmP }, ["method", "path"]),
+
+  // Google Sheets
+  ptool("sh_get_values", ggT, "Jadvaldan qiymatlarni o'qish", { spreadsheet_id: spreadsheetId, range: a1Range }, ["spreadsheet_id", "range"]),
+  ptool("sh_update_values", ggT, "Jadvaldagi qiymatlarni yangilash", { spreadsheet_id: spreadsheetId, range: a1Range, values: { type: "array", items: { type: "array" }, description: "Qatorlar, har biri massiv, masalan [[1,2],[3,4]]" } }, ["spreadsheet_id", "range", "values"]),
+  ptool("sh_append_values", ggT, "Jadvalga qator qo'shish (oxiriga)", { spreadsheet_id: spreadsheetId, range: a1Range, values: { type: "array", items: { type: "array" }, description: "Qo'shiladigan qatorlar" } }, ["spreadsheet_id", "range", "values"]),
+  ptool("sh_clear_values", ggT, "Diapazondagi qiymatlarni tozalash", { spreadsheet_id: spreadsheetId, range: a1Range }, ["spreadsheet_id", "range"]),
+  ptool("sh_create_spreadsheet", ggT, "Yangi jadval (spreadsheet) yaratish", { title: s("Jadval nomi"), sheet_titles: { type: "array", items: { type: "string" }, description: "Varaqlar nomi (ixtiyoriy)" } }, ["title"]),
+  ptool("sh_get_metadata", ggT, "Jadval haqida ma'lumot (varaqlar ro'yxati)", { spreadsheet_id: spreadsheetId }, ["spreadsheet_id"]),
+  ptool("sh_api", ggT, "Istalgan Sheets API v4 so'rovi. Yo'l /v4 dan keyin: /spreadsheets/ID/...", { method: methodP, path: s("Masalan /spreadsheets/ID/values/A1:B2"), body: anyBody, confirm: confirmP }, ["method", "path"]),
 ];
 
 async function http(base, token, method, path, body, extra = {}) {
@@ -253,11 +306,11 @@ async function runPlatform(name, a) {
       result = { deleted: a.name };
       break;
     }
-    case "cf_api": case "nl_api": case "rd_api": {
+    case "cf_api": case "nl_api": case "rd_api": case "yt_api": case "drv_api": case "sh_api": {
       const m = String(a.method || "").toUpperCase();
       if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(m)) throw new Error("Method noto'g'ri");
       if (m === "DELETE") needConfirm(a, "DELETE so'rovi ma'lumotni o'chiradi");
-      const base = name === "cf_api" ? CF : name === "nl_api" ? NL : RD;
+      const base = { cf_api: CF, nl_api: NL, rd_api: RD, yt_api: YT, drv_api: DRV, sh_api: SH }[name];
       const x = await http(base, token, m, String(a.path || ""), a.body);
       result = { status: x.status, data: x.data };
       if (!x.ok) return finishP(result, token, true);
@@ -407,6 +460,179 @@ async function runPlatform(name, a) {
       result = { deleted: a.service_id };
       break;
     }
+
+    // ── YouTube
+    case "yt_search": {
+      const max = Math.min(Math.max(a.max_results || 10, 1), 50);
+      let p = `/search?part=snippet&q=${ep(a.query)}&type=${ep(a.type || "video")}&maxResults=${max}&order=${ep(a.order || "relevance")}`;
+      if (a.channel_id) p += `&channelId=${ep(a.channel_id)}`;
+      const d = pmust(await http(YT, token, "GET", p), "YouTube");
+      result = (d.items || []).map((x) => ({ id: x.id.videoId || x.id.channelId || x.id.playlistId, title: x.snippet?.title, channel: x.snippet?.channelTitle, published: x.snippet?.publishedAt }));
+      break;
+    }
+    case "yt_get_video": {
+      const d = pmust(await http(YT, token, "GET", `/videos?part=snippet,statistics,contentDetails&id=${ep(a.video_ids)}`), "YouTube");
+      result = (d.items || []).map((x) => ({ id: x.id, title: x.snippet?.title, channel: x.snippet?.channelTitle, description: x.snippet?.description, views: x.statistics?.viewCount, likes: x.statistics?.likeCount, comments: x.statistics?.commentCount, duration: x.contentDetails?.duration }));
+      break;
+    }
+    case "yt_get_channel": {
+      const p = a.mine ? `/channels?part=snippet,statistics,contentDetails&mine=true` : `/channels?part=snippet,statistics,contentDetails&id=${ep(a.channel_id)}`;
+      const d = pmust(await http(YT, token, "GET", p), "YouTube");
+      result = (d.items || []).map((x) => ({ id: x.id, title: x.snippet?.title, subscribers: x.statistics?.subscriberCount, views: x.statistics?.viewCount, videos: x.statistics?.videoCount, uploads_playlist: x.contentDetails?.relatedPlaylists?.uploads }));
+      break;
+    }
+    case "yt_list_playlist_items": {
+      const max = Math.min(Math.max(a.max_results || 25, 1), 50);
+      const d = pmust(await http(YT, token, "GET", `/playlistItems?part=snippet,contentDetails&playlistId=${ep(a.playlist_id)}&maxResults=${max}`), "YouTube");
+      result = (d.items || []).map((x) => ({ video_id: x.contentDetails?.videoId, title: x.snippet?.title, position: x.snippet?.position }));
+      break;
+    }
+    case "yt_list_comments": {
+      const max = Math.min(Math.max(a.max_results || 20, 1), 100);
+      const d = pmust(await http(YT, token, "GET", `/commentThreads?part=snippet&videoId=${ep(a.video_id)}&maxResults=${max}`), "YouTube");
+      result = (d.items || []).map((x) => { const c = x.snippet?.topLevelComment?.snippet; return { id: x.id, author: c?.authorDisplayName, text: c?.textDisplay, likes: c?.likeCount, published: c?.publishedAt }; });
+      break;
+    }
+    case "yt_add_comment": {
+      const d = pmust(await http(YT, token, "POST", `/commentThreads?part=snippet`, { snippet: { videoId: a.video_id, topLevelComment: { snippet: { textOriginal: a.text } } } }), "YouTube");
+      result = { id: d.id, posted: true };
+      break;
+    }
+    case "yt_reply_comment": {
+      const d = pmust(await http(YT, token, "POST", `/comments?part=snippet`, { snippet: { parentId: a.parent_id, textOriginal: a.text } }), "YouTube");
+      result = { id: d.id, posted: true };
+      break;
+    }
+    case "yt_delete_comment": {
+      needConfirm(a, `"${a.comment_id}" sharhi o'chiriladi`);
+      pmust(await http(YT, token, "DELETE", `/comments?id=${ep(a.comment_id)}`), "YouTube");
+      result = { deleted: a.comment_id };
+      break;
+    }
+    case "yt_update_video": {
+      const cur = pmust(await http(YT, token, "GET", `/videos?part=snippet&id=${ep(a.video_id)}`), "YouTube");
+      const old = cur.items?.[0]?.snippet;
+      if (!old) throw new Error("Video topilmadi");
+      const snippet = { ...old };
+      if (a.title) snippet.title = a.title;
+      if (a.description !== undefined) snippet.description = a.description;
+      if (a.tags) snippet.tags = a.tags;
+      if (a.category_id) snippet.categoryId = a.category_id;
+      const d = pmust(await http(YT, token, "PUT", `/videos?part=snippet`, { id: a.video_id, snippet }), "YouTube");
+      result = { id: d.id, updated: true, title: d.snippet?.title };
+      break;
+    }
+    case "yt_create_playlist": {
+      const d = pmust(await http(YT, token, "POST", `/playlists?part=snippet,status`, { snippet: { title: a.title, description: a.description || "" }, status: { privacyStatus: a.privacy || "private" } }), "YouTube");
+      result = { id: d.id, title: d.snippet?.title };
+      break;
+    }
+    case "yt_add_to_playlist": {
+      const body = { snippet: { playlistId: a.playlist_id, resourceId: { kind: "youtube#video", videoId: a.video_id } } };
+      if (a.position != null) body.snippet.position = a.position;
+      const d = pmust(await http(YT, token, "POST", `/playlistItems?part=snippet`, body), "YouTube");
+      result = { id: d.id, added: a.video_id };
+      break;
+    }
+    case "yt_subscriptions": {
+      const max = Math.min(Math.max(a.max_results || 25, 1), 50);
+      const d = pmust(await http(YT, token, "GET", `/subscriptions?part=snippet&mine=true&maxResults=${max}`), "YouTube");
+      result = (d.items || []).map((x) => ({ channel_id: x.snippet?.resourceId?.channelId, title: x.snippet?.title }));
+      break;
+    }
+
+    // ── Google Drive
+    case "drv_list_files": {
+      const max = Math.min(Math.max(a.max_results || 20, 1), 100);
+      let p = `/files?pageSize=${max}&fields=${ep("files(id,name,mimeType,modifiedTime,webViewLink)")}`;
+      if (a.query) p += `&q=${ep(a.query)}`;
+      const d = pmust(await http(DRV, token, "GET", p), "Drive");
+      result = d.files || [];
+      break;
+    }
+    case "drv_get_file": {
+      const d = pmust(await http(DRV, token, "GET", `/files/${ep(a.file_id)}?fields=${ep("id,name,mimeType,size,modifiedTime,webViewLink,parents")}`), "Drive");
+      result = d;
+      break;
+    }
+    case "drv_read_text": {
+      const meta = pmust(await http(DRV, token, "GET", `/files/${ep(a.file_id)}?fields=mimeType,name`), "Drive");
+      let r;
+      if (String(meta.mimeType || "").startsWith("application/vnd.google-apps")) {
+        const exp = "text/plain";
+        r = await http(DRV, token, "GET", `/files/${ep(a.file_id)}/export?mimeType=${ep(exp)}`);
+      } else {
+        r = await http(DRV, token, "GET", `/files/${ep(a.file_id)}?alt=media`);
+      }
+      if (!r.ok) pmust(r, "Drive");
+      result = { name: meta.name, content: typeof r.data === "string" ? r.data : JSON.stringify(r.data) };
+      break;
+    }
+    case "drv_create_text_file": {
+      const meta = { name: a.name, mimeType: a.mime_type || "text/plain" };
+      if (a.folder_id) meta.parents = [a.folder_id];
+      const fd = new FormData();
+      fd.append("metadata", new Blob([JSON.stringify(meta)], { type: "application/json" }));
+      fd.append("file", new Blob([a.content], { type: meta.mimeType }));
+      const d = pmust(await http(DRV_UP, token, "POST", `/files?uploadType=multipart&fields=${ep("id,name,webViewLink")}`, fd), "Drive");
+      result = d;
+      break;
+    }
+    case "drv_update_text_file": {
+      const fd = new FormData();
+      fd.append("file", new Blob([a.content], { type: "text/plain" }));
+      const d = pmust(await http(DRV_UP, token, "PATCH", `/files/${ep(a.file_id)}?uploadType=media&fields=${ep("id,name,modifiedTime")}`, fd), "Drive");
+      result = d;
+      break;
+    }
+    case "drv_create_folder": {
+      const body = { name: a.name, mimeType: "application/vnd.google-apps.folder" };
+      if (a.parent_id) body.parents = [a.parent_id];
+      const d = pmust(await http(DRV, token, "POST", "/files?fields=id,name", body), "Drive");
+      result = d;
+      break;
+    }
+    case "drv_delete_file": {
+      needConfirm(a, `"${a.file_id}" fayli butunlay o'chiriladi`);
+      pmust(await http(DRV, token, "DELETE", `/files/${ep(a.file_id)}`), "Drive");
+      result = { deleted: a.file_id };
+      break;
+    }
+
+    // ── Google Sheets
+    case "sh_get_values": {
+      const d = pmust(await http(SH, token, "GET", `/spreadsheets/${ep(a.spreadsheet_id)}/values/${ep(a.range)}`), "Sheets");
+      result = { range: d.range, values: d.values || [] };
+      break;
+    }
+    case "sh_update_values": {
+      const d = pmust(await http(SH, token, "PUT", `/spreadsheets/${ep(a.spreadsheet_id)}/values/${ep(a.range)}?valueInputOption=USER_ENTERED`, { values: a.values }), "Sheets");
+      result = { updated_range: d.updatedRange, updated_cells: d.updatedCells };
+      break;
+    }
+    case "sh_append_values": {
+      const d = pmust(await http(SH, token, "POST", `/spreadsheets/${ep(a.spreadsheet_id)}/values/${ep(a.range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, { values: a.values }), "Sheets");
+      result = { updated_range: d.updates?.updatedRange, updated_cells: d.updates?.updatedCells };
+      break;
+    }
+    case "sh_clear_values": {
+      pmust(await http(SH, token, "POST", `/spreadsheets/${ep(a.spreadsheet_id)}/values/${ep(a.range)}:clear`, {}), "Sheets");
+      result = { cleared: a.range };
+      break;
+    }
+    case "sh_create_spreadsheet": {
+      const body = { properties: { title: a.title } };
+      if (Array.isArray(a.sheet_titles) && a.sheet_titles.length) body.sheets = a.sheet_titles.map((t) => ({ properties: { title: t } }));
+      const d = pmust(await http(SH, token, "POST", "/spreadsheets", body), "Sheets");
+      result = { spreadsheet_id: d.spreadsheetId, url: d.spreadsheetUrl };
+      break;
+    }
+    case "sh_get_metadata": {
+      const d = pmust(await http(SH, token, "GET", `/spreadsheets/${ep(a.spreadsheet_id)}?fields=${ep("properties,sheets.properties")}`), "Sheets");
+      result = { title: d.properties?.title, sheets: (d.sheets || []).map((sp) => ({ id: sp.properties?.sheetId, title: sp.properties?.title, rows: sp.properties?.gridProperties?.rowCount, cols: sp.properties?.gridProperties?.columnCount })) };
+      break;
+    }
+
     default:
       throw new Error("Noma'lum tool: " + name);
   }
@@ -644,7 +870,7 @@ const PUBLIC_TOOLS = [...TOOLS, ...GH_TOOLS, ...P_TOOLS].map(({ method, gh, plat
 
 async function runTool(name, args = {}) {
   if (typeof name === "string" && name.startsWith("gh_")) return runGithub(name, args);
-  if (typeof name === "string" && /^(cf|nl|rd)_/.test(name)) return runPlatform(name, args);
+  if (typeof name === "string" && /^(cf|nl|rd|yt|drv|sh)_/.test(name)) return runPlatform(name, args);
   const t = BY_NAME[name];
   if (!t) throw new Error("Noma'lum tool: " + name);
   const { token, ...rest } = args;
@@ -682,7 +908,7 @@ async function handleRpc(msg) {
         return ok({
           protocolVersion: params?.protocolVersion || "2025-03-26",
           capabilities: { tools: {} },
-          serverInfo: { name: "paradoks-mcp", version: "0.3.0" },
+          serverInfo: { name: "paradoks-mcp", version: "0.4.0" },
         });
       case "ping":
         return ok({});
@@ -831,6 +1057,17 @@ footer a{color:var(--accent)}
       <li>rd_create_service</li><li>rd_deploy</li><li>rd_logs</li>
     </ul>
     <p class="hint">O‘chirish va pullik amallar oldidan Claude sizdan alohida tasdiq so‘raydi.</p>
+  </section>
+
+  <section>
+    <h2>YouTube, Google Drive, Sheets</h2>
+    <p class="lead" style="margin-top:0">Claude videolarni qidiradi, o‘z kanalingizni boshqaradi, sharh yozadi, Drive’da fayl yaratadi, Sheets’dagi jadvalni o‘qiydi va yangilaydi. Google OAuth access token kerak (scope: youtube, drive, spreadsheets).</p>
+    <ul class="chips">
+      <li>yt_search</li><li>yt_get_video</li><li>yt_update_video</li><li>yt_add_comment</li>
+      <li>drv_list_files</li><li>drv_create_text_file</li>
+      <li>sh_get_values</li><li>sh_update_values</li><li>sh_append_values</li>
+    </ul>
+    <p class="hint">Token’ni <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noopener">OAuth Playground</a>’da kerakli scope bilan olasiz (1 soatga yaroqli).</p>
   </section>
 
   <section class="warn">

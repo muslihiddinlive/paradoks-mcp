@@ -1,6 +1,6 @@
 # paradoks-mcp
 
-Claude uchun MCP server (62 ta tool): Telegram, GitHub, Cloudflare, Netlify, Render.
+Claude uchun MCP server (90 ta tool): Telegram, GitHub, Cloudflare, Netlify, Render, YouTube, Google Drive, Google Sheets.
 Tokenlar har tool chaqiruvida beriladi, serverda SAQLANMAYDI va log qilinmaydi.
 
 ## Fayllar
@@ -17,6 +17,7 @@ Claude'da connector manzili: `https://SAYT.netlify.app/mcp`
 - Cloudflare: API Token (Workers Scripts: Edit)
 - Netlify: Personal access token
 - Render: API key
+- YouTube / Google Drive / Google Sheets: Google OAuth access token (masalan OAuth Playground orqali, scope: youtube, drive, spreadsheets). Taxminan 1 soatga yaroqli, saqlanmaydi.
 
 ## Xavfsizlik
 O'chirish (DELETE) va pullik amallar `confirm: true` talab qiladi.
