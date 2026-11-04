@@ -115,6 +115,7 @@ const DRV = "https://www.googleapis.com/drive/v3";
 const DRV_UP = "https://www.googleapis.com/upload/drive/v3";
 const SH = "https://sheets.googleapis.com/v4";
 const ggT = "Google OAuth access token (kerakli scope: youtube, youtube.force-ssl, drive, spreadsheets)";
+const ytKeyT = "YouTube Data API key (oddiy, Google Cloud Console'dan — OAuth shart emas). Faqat ochiq ma'lumot: qidiruv, video/kanal ma'lumoti";
 const ytVideoId = s("Video ID (masalan dQw4w9WgXcQ)");
 const ytPlaylistId = s("Playlist ID");
 const fileId = s("Google Drive fayl ID");
@@ -177,17 +178,19 @@ const P_TOOLS = [
   ptool("rd_delete_service", rdT, "Servisni o'chirish (XAVFLI, tasdiq kerak)", { service_id: rdSvc, confirm: confirmP }, ["service_id"]),
   ptool("rd_api", rdT, "Istalgan Render API so'rovi. Yo'l /v1 dan keyin: /services/ID/...", { method: methodP, path: s("Masalan /services"), body: anyBody, confirm: confirmP }, ["method", "path"]),
 
-  // YouTube
-  ptool("yt_search", ggT, "Video/kanal/playlist qidirish", {
-    query: s("Qidiruv so'zi"), type: s("video, channel yoki playlist (default video)"),
-    channel_id: s("Faqat shu kanaldan qidirish (ixtiyoriy)"),
+  // YouTube — ochiq qidiruv/ko'rish (faqat API key, OAuth shart emas)
+  ptool("yt_search", ytKeyT, "Video/kanal/playlist qidirish, mavzu bo'yicha ham", {
+    query: s("Qidiruv so'zi yoki mavzu"), type: s("video, channel yoki playlist (default video)"),
+    channel_id: s("Faqat shu kanaldan qidirish: UC... ID (ixtiyoriy)"),
     order: s("date, rating, relevance, title, viewCount (default relevance)"),
+    video_duration: s("short (<4daq, shorts shu yerda), medium (4-20daq), long (>20daq) — ixtiyoriy"),
     max_results: n("1-50, default 10"),
   }, ["query"]),
-  ptool("yt_get_video", ggT, "Video(lar) haqida to'liq ma'lumot (statistika, tavsif)", { video_ids: s("Video ID(lar), vergul bilan") }, ["video_ids"]),
-  ptool("yt_get_channel", ggT, "Kanal haqida ma'lumot", { channel_id: s("Kanal ID (mine:true bo'lmasa shart)"), mine: { type: "boolean", description: "O'zingizning kanalingiz" } }),
-  ptool("yt_list_playlist_items", ggT, "Playlist'dagi videolar ro'yxati", { playlist_id: ytPlaylistId, max_results: n("1-50, default 25") }, ["playlist_id"]),
-  ptool("yt_list_comments", ggT, "Video sharhlari (top-level)", { video_id: ytVideoId, max_results: n("1-100, default 20") }, ["video_id"]),
+  ptool("yt_get_video", ytKeyT, "Video(lar) haqida to'liq ma'lumot (statistika, tavsif, davomiylik)", { video_ids: s("Video ID(lar), vergul bilan") }, ["video_ids"]),
+  ptool("yt_get_channel", ytKeyT, "Kanal haqida ma'lumot (obunachilar, videolar soni)", { channel_id: s("Kanal ID (UC...) yoki @handle") }, ["channel_id"]),
+  ptool("yt_channel_latest", ytKeyT, "Falon kanalning eng so'nggi videolari (sana bo'yicha)", { channel_id: s("Kanal ID (UC...) yoki @handle"), max_results: n("1-50, default 10") }, ["channel_id"]),
+  ptool("yt_list_playlist_items", ytKeyT, "Playlist'dagi videolar ro'yxati", { playlist_id: ytPlaylistId, max_results: n("1-50, default 25") }, ["playlist_id"]),
+  ptool("yt_list_comments", ytKeyT, "Video sharhlari (top-level)", { video_id: ytVideoId, max_results: n("1-100, default 20") }, ["video_id"]),
   ptool("yt_add_comment", ggT, "Videoga sharh qoldirish (o'zingiz nomidan)", { video_id: ytVideoId, text: s("Sharh matni") }, ["video_id", "text"]),
   ptool("yt_reply_comment", ggT, "Sharhga javob yozish", { parent_id: s("Javob beriladigan comment ID"), text: s("Javob matni") }, ["parent_id", "text"]),
   ptool("yt_delete_comment", ggT, "Sharhni o'chirish (XAVFLI, tasdiq kerak)", { comment_id: s("Comment ID"), confirm: confirmP }, ["comment_id"]),
@@ -252,6 +255,17 @@ async function sha1hex(bytes) {
   return Array.from(h, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 const ep = encodeURIComponent;
+const APIKEY_RE = /^[A-Za-z0-9_\-]{20,100}$/;
+async function httpKey(base, apiKey, method, path) {
+  if (!apiKey || !APIKEY_RE.test(apiKey)) throw new Error("API key noto'g'ri formatda");
+  if (!/^\/[A-Za-z0-9_\-./%?=&:,+@~]*$/.test(path)) throw new Error("API yo'li noto'g'ri");
+  const sep = path.includes("?") ? "&" : "?";
+  const res = await fetch(base + path + sep + "key=" + ep(apiKey), { method, headers: { accept: "application/json", "user-agent": "paradoks-mcp" } });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  return { ok: res.ok, status: res.status, data };
+}
 
 async function runPlatform(name, a) {
   const token = a.token;
@@ -461,35 +475,46 @@ async function runPlatform(name, a) {
       break;
     }
 
-    // ── YouTube
+    // ── YouTube (ochiq qism — API key)
     case "yt_search": {
       const max = Math.min(Math.max(a.max_results || 10, 1), 50);
       let p = `/search?part=snippet&q=${ep(a.query)}&type=${ep(a.type || "video")}&maxResults=${max}&order=${ep(a.order || "relevance")}`;
       if (a.channel_id) p += `&channelId=${ep(a.channel_id)}`;
-      const d = pmust(await http(YT, token, "GET", p), "YouTube");
+      if (a.video_duration) p += `&videoDuration=${ep(a.video_duration)}`;
+      const d = pmust(await httpKey(YT, token, "GET", p), "YouTube");
       result = (d.items || []).map((x) => ({ id: x.id.videoId || x.id.channelId || x.id.playlistId, title: x.snippet?.title, channel: x.snippet?.channelTitle, published: x.snippet?.publishedAt }));
       break;
     }
     case "yt_get_video": {
-      const d = pmust(await http(YT, token, "GET", `/videos?part=snippet,statistics,contentDetails&id=${ep(a.video_ids)}`), "YouTube");
+      const d = pmust(await httpKey(YT, token, "GET", `/videos?part=snippet,statistics,contentDetails&id=${ep(a.video_ids)}`), "YouTube");
       result = (d.items || []).map((x) => ({ id: x.id, title: x.snippet?.title, channel: x.snippet?.channelTitle, description: x.snippet?.description, views: x.statistics?.viewCount, likes: x.statistics?.likeCount, comments: x.statistics?.commentCount, duration: x.contentDetails?.duration }));
       break;
     }
     case "yt_get_channel": {
-      const p = a.mine ? `/channels?part=snippet,statistics,contentDetails&mine=true` : `/channels?part=snippet,statistics,contentDetails&id=${ep(a.channel_id)}`;
-      const d = pmust(await http(YT, token, "GET", p), "YouTube");
+      const cp = String(a.channel_id || "").startsWith("@") ? `forHandle=${ep(a.channel_id)}` : `id=${ep(a.channel_id)}`;
+      const d = pmust(await httpKey(YT, token, "GET", `/channels?part=snippet,statistics,contentDetails&${cp}`), "YouTube");
       result = (d.items || []).map((x) => ({ id: x.id, title: x.snippet?.title, subscribers: x.statistics?.subscriberCount, views: x.statistics?.viewCount, videos: x.statistics?.videoCount, uploads_playlist: x.contentDetails?.relatedPlaylists?.uploads }));
+      break;
+    }
+    case "yt_channel_latest": {
+      const max = Math.min(Math.max(a.max_results || 10, 1), 50);
+      const cp = String(a.channel_id || "").startsWith("@") ? `forHandle=${ep(a.channel_id)}` : `id=${ep(a.channel_id)}`;
+      const ch = pmust(await httpKey(YT, token, "GET", `/channels?part=contentDetails&${cp}`), "YouTube");
+      const uploads = ch.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+      if (!uploads) throw new Error("Kanal topilmadi");
+      const d = pmust(await httpKey(YT, token, "GET", `/playlistItems?part=snippet,contentDetails&playlistId=${ep(uploads)}&maxResults=${max}`), "YouTube");
+      result = (d.items || []).map((x) => ({ video_id: x.contentDetails?.videoId, title: x.snippet?.title, published: x.contentDetails?.videoPublishedAt }));
       break;
     }
     case "yt_list_playlist_items": {
       const max = Math.min(Math.max(a.max_results || 25, 1), 50);
-      const d = pmust(await http(YT, token, "GET", `/playlistItems?part=snippet,contentDetails&playlistId=${ep(a.playlist_id)}&maxResults=${max}`), "YouTube");
+      const d = pmust(await httpKey(YT, token, "GET", `/playlistItems?part=snippet,contentDetails&playlistId=${ep(a.playlist_id)}&maxResults=${max}`), "YouTube");
       result = (d.items || []).map((x) => ({ video_id: x.contentDetails?.videoId, title: x.snippet?.title, position: x.snippet?.position }));
       break;
     }
     case "yt_list_comments": {
       const max = Math.min(Math.max(a.max_results || 20, 1), 100);
-      const d = pmust(await http(YT, token, "GET", `/commentThreads?part=snippet&videoId=${ep(a.video_id)}&maxResults=${max}`), "YouTube");
+      const d = pmust(await httpKey(YT, token, "GET", `/commentThreads?part=snippet&videoId=${ep(a.video_id)}&maxResults=${max}`), "YouTube");
       result = (d.items || []).map((x) => { const c = x.snippet?.topLevelComment?.snippet; return { id: x.id, author: c?.authorDisplayName, text: c?.textDisplay, likes: c?.likeCount, published: c?.publishedAt }; });
       break;
     }
@@ -908,7 +933,7 @@ async function handleRpc(msg) {
         return ok({
           protocolVersion: params?.protocolVersion || "2025-03-26",
           capabilities: { tools: {} },
-          serverInfo: { name: "paradoks-mcp", version: "0.4.0" },
+          serverInfo: { name: "paradoks-mcp", version: "0.4.1" },
         });
       case "ping":
         return ok({});
@@ -1060,10 +1085,20 @@ footer a{color:var(--accent)}
   </section>
 
   <section>
-    <h2>YouTube, Google Drive, Sheets</h2>
-    <p class="lead" style="margin-top:0">Claude videolarni qidiradi, o‘z kanalingizni boshqaradi, sharh yozadi, Drive’da fayl yaratadi, Sheets’dagi jadvalni o‘qiydi va yangilaydi. Google OAuth access token kerak (scope: youtube, drive, spreadsheets).</p>
+    <h2>YouTube qidiruv</h2>
+    <p class="lead" style="margin-top:0">Claude mavzu bo‘yicha video qidiradi, falon kanalning so‘nggi videolarini topadi, video/kanal ma’lumotini ko‘rsatadi. Oddiy YouTube Data API key yetarli — OAuth shart emas.</p>
     <ul class="chips">
-      <li>yt_search</li><li>yt_get_video</li><li>yt_update_video</li><li>yt_add_comment</li>
+      <li>yt_search</li><li>yt_get_video</li><li>yt_get_channel</li>
+      <li>yt_channel_latest</li><li>yt_list_playlist_items</li><li>yt_list_comments</li>
+    </ul>
+    <p class="hint">Key’ni <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>’da yaratasiz (YouTube Data API v3’ni yoqib, API key oling).</p>
+  </section>
+
+  <section>
+    <h2>Kanal boshqaruvi, Drive, Sheets</h2>
+    <p class="lead" style="margin-top:0">O‘z kanalingizga sharh yozish/video yangilash, Drive’da fayl yaratish, Sheets’dagi jadvalni o‘qish/yozish uchun Google OAuth access token kerak (scope: youtube.force-ssl, drive, spreadsheets).</p>
+    <ul class="chips">
+      <li>yt_update_video</li><li>yt_add_comment</li><li>yt_create_playlist</li>
       <li>drv_list_files</li><li>drv_create_text_file</li>
       <li>sh_get_values</li><li>sh_update_values</li><li>sh_append_values</li>
     </ul>

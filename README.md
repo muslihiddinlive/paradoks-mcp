@@ -17,7 +17,8 @@ Claude'da connector manzili: `https://SAYT.netlify.app/mcp`
 - Cloudflare: API Token (Workers Scripts: Edit)
 - Netlify: Personal access token
 - Render: API key
-- YouTube / Google Drive / Google Sheets: Google OAuth access token (masalan OAuth Playground orqali, scope: youtube, drive, spreadsheets). Taxminan 1 soatga yaroqli, saqlanmaydi.
+- YouTube qidiruv (yt_search, yt_get_video, yt_get_channel, yt_channel_latest, yt_list_playlist_items, yt_list_comments): oddiy YouTube Data API key (Google Cloud Console → Credentials), OAuth shart emas.
+- YouTube kanal boshqaruvi / Google Drive / Google Sheets: Google OAuth access token (masalan OAuth Playground orqali, scope: youtube.force-ssl, drive, spreadsheets). Taxminan 1 soatga yaroqli, saqlanmaydi.
 
 ## Xavfsizlik
 O'chirish (DELETE) va pullik amallar `confirm: true` talab qiladi.
